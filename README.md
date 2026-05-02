@@ -38,7 +38,9 @@ Want to test it out? Here's how to load it locally:
 *Note for Firefox users: Go to `about:debugging` -> This Firefox -> Load Temporary Add-on -> select the `manifest.json`.*
 
 ### Setting up the TMT API
-To make it work, you'll need an API key from the Nepal TMT API:
+To make it work, you'll need an API key from the Information and Language processing Research Lab (ILPRL) - 
+Department of Computer Science and Engineering
+Kathmandu University:
 1. Click the NET-Trans icon and hit the Settings gear.
 2. Paste your API key in the general settings tab.
 3. Click Save, and you're good to go!
@@ -59,7 +61,7 @@ If you prefer using the keyboard:
 We wanted to keep the codebase lightweight and secure. Here's a quick look under the hood:
 
 - **`manifest.json`**: Standard Manifest V3 setup.
-- **`background.js`**: The brains of the operation. This handles all the state, the in-memory caching (so we don't spam the API), and securely makes the network requests.
+- **`background.js`**: The brains of the operation. This handles all the state, the in memory caching (so we don't spam the API), and securely makes the network requests.
 - **`content.js`**: Injects our UI (the popups, toasts, and hover effects) directly into webpages. We use isolated classes to make sure we don't mess up the host website's CSS.
 - **`lib/translator.js`**: Where the language logic lives—handling API requests, grammar tagging, synonym mapping, and detecting if you're reading a technical doc or a casual blog.
 
