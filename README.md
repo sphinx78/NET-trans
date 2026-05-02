@@ -18,6 +18,13 @@ NET-Trans isn't just a basic translator. Here's what we packed into it:
 
 ---
 
+## Demo Video
+
+You can find the demo and walkthrough video for NET-Trans here: 
+[NET-Trans Demo Video (Google Drive)](https://drive.google.com/drive/folders/1HSGep7FiDl8aBYx5yGNMln_dnQCeWWY5?usp=sharing)
+
+---
+
 ## Getting Started
 
 Want to test it out? Here's how to load it locally:
@@ -25,7 +32,7 @@ Want to test it out? Here's how to load it locally:
 1. Clone or download this repository.
 2. Open Chrome and go to `chrome://extensions/`.
 3. Toggle **Developer mode** on in the top right corner.
-4. Click **Load unpacked** and select the `linguist-ai` folder.
+4. Click **Load unpacked** and select the `NET-trans` folder.
 5. Pin the extension up top for easy access!
 
 *Note for Firefox users: Go to `about:debugging` -> This Firefox -> Load Temporary Add-on -> select the `manifest.json`.*
