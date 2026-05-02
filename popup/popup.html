@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NET-Trans</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <div class="app">
+
+    <header class="header">
+      <div class="header__brand">
+        <img src="../logo.png" alt="NET-Trans" class="header__logo" />
+        <span class="header__title">NET-Trans</span>
+      </div>
+      <button class="icon-btn" id="btnSettings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path
+            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </button>
+    </header>
+
+    <div class="lang-bar">
+      <button class="lang-btn" id="langSource">English</button>
+      <button class="lang-swap" id="btnSwap" title="Swap languages">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      </button>
+      <button class="lang-btn" id="langTarget">Nepali</button>
+    </div>
+
+    <div class="translator">
+      <div class="textarea-wrap">
+        <textarea id="inputText" class="input-box" placeholder="Enter text to translate..." rows="4" maxlength="2000"
+          spellcheck="false"></textarea>
+        <div class="input-actions">
+          <span class="char-count" id="charCount">0 / 2000</span>
+          <button class="icon-btn" id="btnClearInput" title="Clear">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <button class="icon-btn hidden" id="btnTTSInput" title="Read aloud">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="translate-btn" id="btnTranslate">
+        <span>Translate</span>
+        <kbd>Ctrl+Enter</kbd>
+      </button>
+
+      <div class="output-wrap" id="outputWrap">
+        <div class="output-loading hidden" id="outputLoading">
+          <div class="spinner"></div>
+          <span>Translating...</span>
+        </div>
+        <div class="output-text hidden" id="outputText"></div>
+        <div class="output-meta hidden" id="outputMeta">
+          <div class="meta-row hidden" id="metaIdiom">
+            <span class="meta-label">Idiom</span>
+            <span class="meta-val" id="metaIdiomText"></span>
+          </div>
+          <div class="meta-row hidden" id="metaCultural">
+            <span class="meta-label">Cultural</span>
+            <span class="meta-val" id="metaCulturalText"></span>
+          </div>
+          <div class="meta-row" id="metaProvider">
+            <span class="meta-label">Source</span>
+            <span class="meta-val" id="metaProviderText">TMT API</span>
+          </div>
+        </div>
+        <div class="output-actions hidden" id="outputActions">
+          <button class="icon-btn hidden" id="btnTTSOutput" title="Read translation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            </svg>
+          </button>
+          <button class="icon-btn" id="btnCopy" title="Copy">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </button>
+          <button class="icon-btn" id="btnSaveWord" title="Save to dictionary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-actions">
+      <button class="action-btn" id="btnTranslatePage">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+        <span id="btnTranslatePageText">Translate Page</span>
+      </button>
+      <button class="action-btn" id="btnDictionary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
+        <span>Dictionary</span>
+      </button>
+      <button class="action-btn" id="btnQuiz">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+        <span>Quiz</span>
+      </button>
+    </div>
+
+    <div class="tools-row">
+      <button class="tool-chip" id="btnGlossary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        Glossary
+      </button>
+      <button class="tool-chip" id="btnHistory">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+        History
+      </button>
+    </div>
+
+    <!-- Dictionary Panel -->
+    <div class="panel hidden" id="panelDictionary">
+      <div class="panel__header">
+        <span>Dictionary</span>
+        <div class="panel__header-actions">
+          <input class="panel__search" id="dictSearch" placeholder="Search..." />
+          <button class="panel__close" id="btnCloseDictionary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="tag-filters">
+        <button class="tag-btn active" data-tag="all">All</button>
+        <button class="tag-btn" data-tag="travel">Travel</button>
+        <button class="tag-btn" data-tag="study">Study</button>
+        <button class="tag-btn" data-tag="work">Work</button>
+        <button class="tag-btn" data-tag="general">General</button>
+      </div>
+      <div class="dict-list" id="dictList">
+        <div class="empty-state">No saved words yet. Translate text and save to build your dictionary.</div>
+      </div>
+    </div>
+
+    <!-- Quiz Panel -->
+    <div class="panel hidden" id="panelQuiz">
+      <div class="panel__header">
+        <span>Vocabulary Quiz</span>
+        <button class="panel__close" id="btnCloseQuiz">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      <div class="quiz-content" id="quizContent">
+        <div class="quiz-score-bar" id="quizScoreBar">
+          <div class="quiz-score-item"><span class="quiz-score-label">Score</span><span class="quiz-score-value"
+              id="quizScoreValue">0 / 0</span></div>
+          <div class="quiz-score-item"><span class="quiz-score-label">Streak</span><span class="quiz-score-value"
+              id="quizStreak">0</span></div>
+        </div>
+        <div class="quiz-card" id="quizCard">
+          <div class="quiz-progress" id="quizProgress">Word 1 of 0</div>
+          <div class="quiz-question" id="quizQuestion">Loading...</div>
+          <div class="quiz-input-area" id="quizInputArea">
+            <input type="text" class="quiz-input" id="quizInput" placeholder="Type the translation..."
+              autocomplete="off" spellcheck="false" />
+            <button class="btn-primary" id="quizSubmit">Check</button>
+          </div>
+          <div class="quiz-feedback hidden" id="quizFeedback"></div>
+          <button class="btn-outline hidden" id="quizNext">Next Word</button>
+          <button class="btn-ghost" id="quizSkip">Skip</button>
+        </div>
+        <div class="quiz-complete hidden" id="quizComplete">
+          <div class="quiz-complete-title">Quiz Complete!</div>
+          <div class="quiz-complete-stats" id="quizCompleteStats"></div>
+          <button class="btn-primary" id="quizRestart">Play Again</button>
+        </div>
+        <div class="quiz-empty hidden" id="quizEmpty">No words in your dictionary yet. Save words first, then come back
+          to practice!</div>
+      </div>
+    </div>
+
+    <!-- History Panel -->
+    <div class="panel hidden" id="panelHistory">
+      <div class="panel__header">
+        <span>History</span>
+        <div class="panel__header-actions">
+          <input class="panel__search" id="histSearch" placeholder="Search history..." />
+          <button class="panel__close" id="btnCloseHistory">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="hist-list" id="histList">
+        <div class="empty-state">No translation history yet.</div>
+      </div>
+    </div>
+
+  </div>
+  <script src="popup.js"></script>
+</body>
+
+</html>
