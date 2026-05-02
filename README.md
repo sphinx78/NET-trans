@@ -2,7 +2,7 @@
 
 Hey there! 👋 Welcome to **NET-Trans**. We built this browser extension for the **Google TMT Hackathon 2026** because we wanted a better way to bridge the gap between English, Nepali, and Tamang on the web. 
 
-Most translation tools give you robotic, literal translations. We wanted something smarter—something that understands context, explains cultural nuances, and even helps you learn the language while you browse.
+Most translation tools give you robotic, literal translations. We wanted something smarter.. something that understands context, explains cultural nuances, and even helps you learn the language while you browse.
 
 ---
 
