@@ -429,6 +429,531 @@
     }
   });
 
+  // ═══════════════════════════════════════════════════
+  // YouTube Subtitle Translation System
+  // ═══════════════════════════════════════════════════
+
+  var ytSubs = {
+    active: false,
+    translating: false,
+    overlay: null,
+    toggleBtn: null,
+    captions: [],          // { start, end, text }
+    groups: [],            // { start, end, original, translated }
+    videoEl: null,
+    syncRAF: null,
+    currentIdx: -1,
+    wasActive: false,      // remember state across SPA nav
+    lastVideoId: null,
+    fallbackObserver: null,
+    fallbackQueue: [],
+    fallbackTimer: null,
+    fallbackCache: new Map(),
+
+    isYouTubePage: function() {
+      return (location.hostname === 'www.youtube.com' || location.hostname === 'youtube.com')
+        && location.pathname === '/watch';
+    },
+
+    getVideoId: function() {
+      try { return new URL(location.href).searchParams.get('v'); } catch(e) { return null; }
+    },
+
+    // wait for the <video> element to exist
+    waitForVideo: function() {
+      var self = this;
+      return new Promise(function(resolve) {
+        var tries = 0;
+        var check = function() {
+          self.videoEl = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          if (self.videoEl) return resolve(true);
+          if (++tries > 40) return resolve(false);
+          setTimeout(check, 400);
+        };
+        check();
+      });
+    },
+
+    // inject the bridge script to get caption tracks from YouTube's player
+    extractCaptionTracks: function() {
+      return new Promise(function(resolve) {
+        var resolved = false;
+        var handler = function(event) {
+          if (event.data && event.data.type === 'NT_YT_CAPTION_TRACKS') {
+            window.removeEventListener('message', handler);
+            resolved = true;
+            resolve(event.data.tracks || []);
+          }
+        };
+        window.addEventListener('message', handler);
+
+        var script = document.createElement('script');
+        try { script.src = chrome.runtime.getURL('lib/yt-caption-bridge.js'); } catch(e) { resolve([]); return; }
+        script.onload = function() { script.remove(); };
+        script.onerror = function() { script.remove(); if (!resolved) resolve([]); };
+        (document.head || document.documentElement).appendChild(script);
+
+        setTimeout(function() {
+          window.removeEventListener('message', handler);
+          if (!resolved) resolve([]);
+        }, 5000);
+      });
+    },
+
+    // fetch and parse timed captions from a track URL
+    fetchCaptions: function(baseUrl) {
+      // request JSON3 format
+      var url = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=json3';
+      return fetch(url).then(function(resp) {
+        if (!resp.ok) throw new Error('Caption fetch failed: ' + resp.status);
+        return resp.json();
+      }).then(function(data) {
+        var captions = [];
+        var events = data.events || [];
+        for (var i = 0; i < events.length; i++) {
+          var ev = events[i];
+          if (!ev.segs || !ev.segs.length) continue;
+          var text = '';
+          for (var s = 0; s < ev.segs.length; s++) {
+            text += (ev.segs[s].utf8 || '');
+          }
+          text = text.replace(/\n/g, ' ').trim();
+          if (!text || text === ' ') continue;
+          var startMs = ev.tStartMs || 0;
+          var durMs = ev.dDurationMs || 3000;
+          captions.push({
+            start: startMs / 1000,
+            end: (startMs + durMs) / 1000,
+            text: text
+          });
+        }
+        return captions;
+      }).catch(function() { return []; });
+    },
+
+    // group sequential captions into sentences for better translation
+    groupIntoSentences: function(captions) {
+      if (!captions.length) return [];
+      var groups = [];
+      var buf = [];
+      var PAUSE_THRESHOLD = 1.5; // seconds gap = sentence break
+
+      for (var i = 0; i < captions.length; i++) {
+        buf.push(captions[i]);
+        var text = captions[i].text;
+        var hasEnd = /[.!?।]$/.test(text.trim());
+        var nextGap = (i + 1 < captions.length) ? (captions[i + 1].start - captions[i].end) : 999;
+        var bufLen = buf.reduce(function(a, c) { return a + c.text.length; }, 0);
+
+        if (hasEnd || nextGap > PAUSE_THRESHOLD || bufLen > 200 || i === captions.length - 1) {
+          var combined = buf.map(function(c) { return c.text; }).join(' ').replace(/\s+/g, ' ').trim();
+          groups.push({
+            start: buf[0].start,
+            end: buf[buf.length - 1].end,
+            original: combined,
+            translated: ''
+          });
+          buf = [];
+        }
+      }
+      return groups;
+    },
+
+    // batch translate all sentence groups
+    translateGroups: function() {
+      var self = this;
+      var texts = self.groups.map(function(g) { return g.original; });
+      if (!texts.length) return Promise.resolve();
+
+      var BATCH = 30;
+      var done = 0;
+      var total = texts.length;
+
+      function translateBatch(startIdx) {
+        var batch = texts.slice(startIdx, startIdx + BATCH);
+        if (!batch.length) return Promise.resolve();
+
+        return msg('BATCH_TRANSLATE', {
+          texts: batch,
+          sourceLang: settings.sourceLang || 'en',
+          targetLang: settings.targetLang || 'ne'
+        }).then(function(response) {
+          if (response && response.results) {
+            for (var j = 0; j < batch.length; j++) {
+              var r = response.results[j];
+              if (r && r.translatedText && !r.error) {
+                self.groups[startIdx + j].translated = r.translatedText;
+              } else {
+                self.groups[startIdx + j].translated = self.groups[startIdx + j].original;
+              }
+            }
+          }
+          done += batch.length;
+          var pct = Math.round((done / total) * 100);
+          showToast('Translating subtitles... ' + pct + '%', 'info', 0);
+
+          if (startIdx + BATCH < texts.length) {
+            return new Promise(function(r) { setTimeout(r, 80); })
+              .then(function() { return translateBatch(startIdx + BATCH); });
+          }
+        }).catch(function(err) {
+          // fill failed entries with original text
+          for (var j = startIdx; j < Math.min(startIdx + BATCH, self.groups.length); j++) {
+            if (!self.groups[j].translated) self.groups[j].translated = self.groups[j].original;
+          }
+          done += batch.length;
+          if (startIdx + BATCH < texts.length) {
+            return new Promise(function(r) { setTimeout(r, 200); })
+              .then(function() { return translateBatch(startIdx + BATCH); });
+          }
+        });
+      }
+
+      return translateBatch(0);
+    },
+
+    // create the subtitle overlay inside the video player
+    createOverlay: function() {
+      if (this.overlay) this.overlay.remove();
+
+      var overlay = document.createElement('div');
+      overlay.className = 'nt-yt-overlay';
+      overlay.setAttribute('data-nt-skip', '1');
+      overlay.innerHTML =
+        '<div class="nt-yt-sub-original"></div>' +
+        '<div class="nt-yt-sub-translated"></div>';
+
+      // place inside the player so it stays with fullscreen
+      var player = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+      if (player) {
+        player.appendChild(overlay);
+      } else {
+        document.body.appendChild(overlay);
+      }
+      this.overlay = overlay;
+    },
+
+    // create the toggle button inside YouTube's control bar
+    createToggleButton: function() {
+      if (this.toggleBtn) this.toggleBtn.remove();
+
+      var btn = document.createElement('button');
+      btn.className = 'nt-yt-toggle ytp-button';
+      btn.setAttribute('data-nt-skip', '1');
+      btn.setAttribute('title', 'NET-Trans: Translate Subtitles');
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">' +
+        '<path d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 0 1 6.412 9m6.088 9h7M13 19l3-8 3 8m-5.265-2h4.53"/>' +
+        '<path d="M5 8l4 7"/>' +
+        '</svg>';
+
+      var self = this;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (self.active) self.deactivate();
+        else self.activate();
+      });
+
+      // insert into YouTube's right controls
+      var rightControls = document.querySelector('.ytp-right-controls');
+      if (rightControls) {
+        rightControls.insertBefore(btn, rightControls.firstChild);
+      } else {
+        // fallback: float near the player
+        btn.classList.add('nt-yt-toggle-float');
+        var player = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+        if (player) player.appendChild(btn);
+        else document.body.appendChild(btn);
+      }
+
+      this.toggleBtn = btn;
+    },
+
+    // pick the best caption track (prefer source language, then English, then first available)
+    pickTrack: function(tracks) {
+      var srcLang = settings.sourceLang || 'en';
+      // prefer manual tracks over ASR
+      var manual = tracks.filter(function(t) { return t.kind !== 'asr'; });
+      var pool = manual.length ? manual : tracks;
+
+      for (var i = 0; i < pool.length; i++) {
+        if (pool[i].languageCode === srcLang) return pool[i];
+      }
+      for (var i = 0; i < pool.length; i++) {
+        if (pool[i].languageCode === 'en') return pool[i];
+      }
+      return pool[0] || tracks[0];
+    },
+
+    // main activation flow
+    activate: function() {
+      if (this.active || this.translating) return;
+      var self = this;
+      self.translating = true;
+      if (self.toggleBtn) self.toggleBtn.classList.add('nt-yt-active');
+      showToast('Loading captions...', 'info', 0);
+
+      // retry caption extraction a few times (player might not be ready)
+      var attempt = 0;
+      function tryExtract() {
+        return self.extractCaptionTracks().then(function(tracks) {
+          if (tracks.length) return tracks;
+          if (++attempt < 3) {
+            return new Promise(function(r) { setTimeout(r, 1500); }).then(tryExtract);
+          }
+          return [];
+        });
+      }
+
+      tryExtract().then(function(tracks) {
+        if (!tracks.length) {
+          showToast('No captions found. Trying live fallback...', 'warning');
+          self.translating = false;
+          self.activateFallback();
+          return;
+        }
+
+        var track = self.pickTrack(tracks);
+        showToast('Fetching "' + (track.name || track.languageCode) + '" captions...', 'info', 0);
+
+        return self.fetchCaptions(track.baseUrl).then(function(captions) {
+          if (!captions.length) {
+            showToast('Caption data empty. Trying live fallback...', 'warning');
+            self.translating = false;
+            self.activateFallback();
+            return;
+          }
+
+          self.captions = captions;
+          self.groups = self.groupIntoSentences(captions);
+          showToast('Translating ' + self.groups.length + ' subtitle groups...', 'info', 0);
+
+          return self.translateGroups().then(function() {
+            self.createOverlay();
+            self.active = true;
+            self.wasActive = true;
+            self.translating = false;
+            self.currentIdx = -1;
+            self.startSync();
+            showToast('Subtitles translated! (' + self.groups.length + ' groups)', 'success');
+          });
+        });
+      }).catch(function(err) {
+        showToast('Subtitle error: ' + err.message, 'error');
+        self.translating = false;
+        if (self.toggleBtn) self.toggleBtn.classList.remove('nt-yt-active');
+      });
+    },
+
+    deactivate: function() {
+      this.active = false;
+      this.wasActive = false;
+      this.stopSync();
+      this.stopFallback();
+      if (this.overlay) { this.overlay.remove(); this.overlay = null; }
+      if (this.toggleBtn) this.toggleBtn.classList.remove('nt-yt-active');
+      this.captions = [];
+      this.groups = [];
+      this.currentIdx = -1;
+      showToast('Subtitle translation off', 'info');
+    },
+
+    // sync translated subtitles with video playback using RAF
+    startSync: function() {
+      var self = this;
+      if (self.syncRAF) cancelAnimationFrame(self.syncRAF);
+
+      function tick() {
+        if (!self.active || !self.videoEl || !self.overlay) return;
+        var t = self.videoEl.currentTime;
+        var found = -1;
+
+        // binary-ish search for current group
+        for (var i = 0; i < self.groups.length; i++) {
+          if (t >= self.groups[i].start - 0.15 && t <= self.groups[i].end + 0.1) {
+            found = i;
+            break;
+          }
+          if (self.groups[i].start > t + 1) break;
+        }
+
+        if (found !== self.currentIdx) {
+          self.currentIdx = found;
+          var origEl = self.overlay.querySelector('.nt-yt-sub-original');
+          var transEl = self.overlay.querySelector('.nt-yt-sub-translated');
+          if (found >= 0 && self.groups[found]) {
+            origEl.textContent = self.groups[found].original;
+            transEl.textContent = self.groups[found].translated;
+            self.overlay.classList.add('nt-yt-show');
+          } else {
+            self.overlay.classList.remove('nt-yt-show');
+          }
+        }
+
+        self.syncRAF = requestAnimationFrame(tick);
+      }
+
+      self.syncRAF = requestAnimationFrame(tick);
+    },
+
+    stopSync: function() {
+      if (this.syncRAF) { cancelAnimationFrame(this.syncRAF); this.syncRAF = null; }
+    },
+
+    // ── Fallback: MutationObserver on live captions ──
+    activateFallback: function() {
+      var self = this;
+      self.createOverlay();
+      self.active = true;
+      self.wasActive = true;
+      if (self.toggleBtn) self.toggleBtn.classList.add('nt-yt-active');
+
+      // observe YouTube's caption container
+      var captionContainer = document.querySelector('.ytp-caption-window-container');
+      if (!captionContainer) {
+        // wait for it
+        var waitCount = 0;
+        var waitInt = setInterval(function() {
+          captionContainer = document.querySelector('.ytp-caption-window-container');
+          if (captionContainer || ++waitCount > 30) {
+            clearInterval(waitInt);
+            if (captionContainer) self.startFallbackObserver(captionContainer);
+            else showToast('No caption container found. Enable captions in the video.', 'warning');
+          }
+        }, 500);
+        return;
+      }
+      self.startFallbackObserver(captionContainer);
+      showToast('Live subtitle translation active', 'success');
+    },
+
+    startFallbackObserver: function(container) {
+      var self = this;
+      if (self.fallbackObserver) { self.fallbackObserver.disconnect(); self.fallbackObserver = null; }
+
+      self.fallbackObserver = new MutationObserver(function() {
+        if (!self.active) return;
+        // read all current caption segments
+        var segs = container.querySelectorAll('.ytp-caption-segment');
+        var text = '';
+        for (var i = 0; i < segs.length; i++) {
+          text += (segs[i].textContent || '') + ' ';
+        }
+        text = text.trim();
+        if (!text) {
+          if (self.overlay) self.overlay.classList.remove('nt-yt-show');
+          return;
+        }
+
+        // check cache
+        if (self.fallbackCache.has(text)) {
+          self.showFallbackSubtitle(text, self.fallbackCache.get(text));
+          return;
+        }
+
+        // debounce translation requests
+        if (self.fallbackTimer) clearTimeout(self.fallbackTimer);
+        // show original immediately while translating
+        self.showFallbackSubtitle(text, '...');
+
+        self.fallbackTimer = setTimeout(function() {
+          msg('BATCH_TRANSLATE', {
+            texts: [text],
+            sourceLang: settings.sourceLang || 'en',
+            targetLang: settings.targetLang || 'ne'
+          }).then(function(response) {
+            if (response && response.results && response.results[0] && !response.results[0].error) {
+              var translated = response.results[0].translatedText;
+              self.fallbackCache.set(text, translated);
+              // only show if caption text hasn't already changed
+              var currentSegs = container.querySelectorAll('.ytp-caption-segment');
+              var currentText = '';
+              for (var i = 0; i < currentSegs.length; i++) currentText += (currentSegs[i].textContent || '') + ' ';
+              if (currentText.trim() === text) {
+                self.showFallbackSubtitle(text, translated);
+              }
+            }
+          }).catch(function() {});
+        }, 150);
+      });
+
+      self.fallbackObserver.observe(container, { childList: true, subtree: true, characterData: true });
+    },
+
+    showFallbackSubtitle: function(original, translated) {
+      if (!this.overlay) return;
+      var origEl = this.overlay.querySelector('.nt-yt-sub-original');
+      var transEl = this.overlay.querySelector('.nt-yt-sub-translated');
+      origEl.textContent = original;
+      transEl.textContent = translated;
+      this.overlay.classList.add('nt-yt-show');
+    },
+
+    stopFallback: function() {
+      if (this.fallbackObserver) { this.fallbackObserver.disconnect(); this.fallbackObserver = null; }
+      if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null; }
+      this.fallbackCache.clear();
+    },
+
+    // handle YouTube SPA navigation
+    handleNavigation: function() {
+      var self = this;
+      var newId = self.getVideoId();
+      if (!self.isYouTubePage()) {
+        // navigated away from a video page
+        if (self.active) self.deactivate();
+        if (self.toggleBtn) { self.toggleBtn.remove(); self.toggleBtn = null; }
+        if (self.overlay) { self.overlay.remove(); self.overlay = null; }
+        self.lastVideoId = null;
+        return;
+      }
+      if (newId === self.lastVideoId) return; // same video, nothing to do
+      self.lastVideoId = newId;
+
+      // clean up previous
+      self.stopSync();
+      self.stopFallback();
+      self.captions = [];
+      self.groups = [];
+      self.currentIdx = -1;
+      if (self.overlay) { self.overlay.remove(); self.overlay = null; }
+      self.active = false;
+      if (self.toggleBtn) self.toggleBtn.classList.remove('nt-yt-active');
+
+      // re-init
+      self.waitForVideo().then(function(found) {
+        if (!found) return;
+        if (!self.toggleBtn || !self.toggleBtn.parentElement) self.createToggleButton();
+        // re-activate if was previously active
+        if (self.wasActive) {
+          self.wasActive = false; // will be set again by activate
+          setTimeout(function() { self.activate(); }, 1500);
+        }
+      });
+    },
+
+    // full initialization
+    setup: function() {
+      if (!this.isYouTubePage()) return;
+      var self = this;
+      self.lastVideoId = self.getVideoId();
+
+      self.waitForVideo().then(function(found) {
+        if (!found) return;
+        self.createToggleButton();
+
+        // listen for YouTube SPA navigations
+        document.addEventListener('yt-navigate-finish', function() {
+          setTimeout(function() { self.handleNavigation(); }, 800);
+        });
+        // also watch for popstate
+        window.addEventListener('popstate', function() {
+          setTimeout(function() { self.handleNavigation(); }, 800);
+        });
+      });
+    }
+  };
+
   // init
   async function init() {
     if (!isAlive()) return;
@@ -446,6 +971,9 @@
       var domainCheck = await msg('CHECK_DOMAIN', { url: location.href });
       if (domainCheck && domainCheck.shouldTranslate) translatePage();
     } catch (e) {}
+
+    // initialize YouTube subtitle translation if on YouTube
+    ytSubs.setup();
   }
 
   init();
